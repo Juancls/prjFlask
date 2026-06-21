@@ -21,6 +21,9 @@ db.init_app(app)
 with app.app_context():
     db.create_all()
 
+#================================================================================================================================================
+#================================================================================================================================================
+
     # verifica se a tabela de serviços já tem registros para não duplicar
     if models.Servico.query.first() is None:
         servicos_iniciais = [
@@ -46,13 +49,14 @@ with app.app_context():
             db.session.rollback()
             print(f"Erro ao inserir serviços iniciais: {e}")
 
+#================================================================================================================================================
+#================================================================================================================================================
 
 @app.route('/servicos', methods=['GET'])
 def listar_servicos():
-    # Busca todos os serviços ordenados pelo ID
     servicos = models.Servico.query.order_by(models.Servico.idServico).all()
 
-    # Cria a lista formatada em JSON
+
     lista_servicos = []
     for s in servicos:
         lista_servicos.append({
@@ -63,6 +67,79 @@ def listar_servicos():
         })
 
     return jsonify(lista_servicos), 200
+
+#================================================================================================================================================
+#================================================================================================================================================
+@app.route('/agendamentos', methods=['POST'])
+def criar_agendamento():
+    dados = request.get_json()
+
+    data_str = dados.get('data_reservada')
+    horario_str = dados.get('horario_reservado')
+    endereco = dados.get('endereco')
+    lista_servicos = dados.get('servicos')
+    id_cliente = dados.get('idCliente', 1)
+
+    if not data_str or not horario_str or not lista_servicos:
+        return jsonify({"erro": "Data, horário e pelo menos um serviço são obrigatórios."}), 400
+
+    try:
+        data_objeto = datetime.strptime(data_str, '%Y-%m-%d').date()
+        horario_objeto = datetime.strptime(horario_str, '%H:%M').time()
+
+        cliente = models.Cliente.query.get(id_cliente)
+        if cliente:
+            cliente.endereco = endereco
+            db.session.add(cliente)
+
+        for id_servico in lista_servicos:
+            novo_agendamento = models.Agendamento(
+                data_reservada=data_objeto,
+                horario_reservado=horario_objeto,
+                status_da_reserva="Pendente",
+                idCliente=id_cliente,
+                idServico=id_servico,
+                idFuncionario=None
+            )
+            db.session.add(novo_agendamento)
+
+        db.session.commit()
+        return jsonify({"mensagem": "Agendamento(s) criado(s) com sucesso!"}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"erro": f"Erro interno ao salvar agendamento: {str(e)}"}), 500
+
+#================================================================================================================================================
+#================================================================================================================================================
+
+
+@app.route('/clientes/<int:id_cliente>/agendamentos', methods=['GET'])
+def obter_agendamentos_cliente(id_cliente):
+    try:
+
+        agendamentos = models.Agendamento.query.filter_by(idCliente=id_cliente).all()
+
+        lista_agendamentos = []
+        for a in agendamentos:
+            lista_agendamentos.append({
+                "idAgendamento": a.idAgendamento,
+
+                "data": a.data_reservada.strftime('%d/%m/%Y') if a.data_reservada else "Sem data",
+                "horario": a.horario_reservado.strftime('%H:%M') if a.horario_reservado else "Sem hora",
+                "status": a.status_da_reserva if a.status_da_reserva else "Pendente",
+
+                "servico": a.servico.descricao if a.servico else "Serviço Geral",
+                "valor": float(a.servico.valor) if a.servico and a.servico.valor else 0.0
+            })
+
+        return jsonify(lista_agendamentos), 200
+
+    except Exception as e:
+        return jsonify({"erro": f"Erro ao buscar histórico: {str(e)}"}), 500
+
+#================================================================================================================================================
+#================================================================================================================================================
 
 
 @app.route('/cadastrar', methods=['POST'])
@@ -143,76 +220,6 @@ def buscar_cliente_por_id(id_cliente):
     }), 200
 
 
-@app.route('/agendamentos', methods=['POST'])
-def criar_agendamento():
-    dados = request.get_json()
-
-    # 1. Captura os dados vindos do Front-end
-    data_str = dados.get('data_reservada')  # Recebe 'YYYY-MM-DD'
-    horario_str = dados.get('horario_reservado')  # Recebe 'HH:MM'
-    endereco = dados.get('endereco')
-    lista_servicos = dados.get('servicos')  # Lista de IDs ex: [1, 4, 7]
-    id_cliente = dados.get('idCliente', 1)  # Padrão 1 caso não venha logado
-
-    # Validação básica
-    if not data_str or not horario_str or not lista_servicos:
-        return jsonify({"erro": "Data, horário e pelo menos um serviço são obrigatórios."}), 400
-
-    try:
-        # 2. Converte as strings do React para formatos que o SQLAlchemy entende
-        data_objeto = datetime.strptime(data_str, '%Y-%m-%d').date()
-        horario_objeto = datetime.strptime(horario_str, '%H:%M').time()
-
-        # 3. Opcional: Se quiser atualizar o endereço no cadastro do Cliente
-        cliente = models.Cliente.query.get(id_cliente)
-        if cliente:
-            cliente.endereco = endereco
-            db.session.add(cliente)
-
-        # 4. Cria um registro na tabela agendamento para CADA serviço selecionado
-        for id_servico in lista_servicos:
-            novo_agendamento = models.Agendamento(
-                data_reservada=data_objeto,
-                horario_reservado=horario_objeto,
-                status_da_reserva="Pendente",
-                idCliente=id_cliente,
-                idServico=id_servico,
-                idFuncionario=None  # Fica nulo até a Vivi Cleaning atribuir um funcionário no dashboard
-            )
-            db.session.add(novo_agendamento)
-
-        # Salva todas as inserções de uma vez só no SQLite
-        db.session.commit()
-        return jsonify({"mensagem": "Agendamento(s) criado(s) com sucesso!"}), 201
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"erro": f"Erro interno ao salvar agendamento: {str(e)}"}), 500
-
-
-@app.route('/clientes/<int:id_cliente>/agendamentos', methods=['GET'])
-def obter_agendamentos_cliente(id_cliente):
-    try:
-        # Busca todos os agendamentos do cliente específico no SQLite
-        agendamentos = models.Agendamento.query.filter_by(idCliente=id_cliente).all()
-
-        lista_agendamentos = []
-        for a in agendamentos:
-            lista_agendamentos.append({
-                "idAgendamento": a.idAgendamento,
-                # Converte os objetos de data/hora do SQLite para texto legível
-                "data": a.data_reservada.strftime('%d/%m/%Y') if a.data_reservada else "Sem data",
-                "horario": a.horario_reservado.strftime('%H:%M') if a.horario_reservado else "Sem hora",
-                "status": a.status_da_reserva if a.status_da_reserva else "Pendente",
-                # Pega a descrição direto do relacionamento com a tabela servico
-                "servico": a.servico.descricao if a.servico else "Serviço Geral",
-                "valor": float(a.servico.valor) if a.servico and a.servico.valor else 0.0
-            })
-
-        return jsonify(lista_agendamentos), 200
-
-    except Exception as e:
-        return jsonify({"erro": f"Erro ao buscar histórico: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
