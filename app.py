@@ -1,4 +1,3 @@
-# app.py ou main.py
 import os
 from flask import Flask
 from flask import request, jsonify
@@ -6,6 +5,7 @@ from datetime import datetime
 from flask_cors import CORS
 import models
 from database import db
+from models import Funcionario
 
 app = Flask(__name__)
 CORS(app)
@@ -48,6 +48,8 @@ with app.app_context():
         except Exception as e:
             db.session.rollback()
             print(f"Erro ao inserir serviços iniciais: {e}")
+
+
 
 #================================================================================================================================================
 #================================================================================================================================================
@@ -142,6 +144,57 @@ def obter_agendamentos_cliente(id_cliente):
 #================================================================================================================================================
 
 
+@app.route('/cadastroFuncionario', methods=['POST'])
+def cadFuncionario():
+    dados = request.get_json()
+
+    nomeFunc = dados.get('nome')
+    cpfFunc = dados.get('cpf')
+    telefoneFunc = dados.get('telefone')
+    emailFunc = dados.get('email')
+    especialidadeFunc = dados.get('especialidade')
+    disponibilidadeFunc = dados.get('disponibilidade')
+
+    if not all ([nomeFunc, cpfFunc, telefoneFunc, emailFunc, especialidadeFunc, disponibilidadeFunc]):
+        return jsonify({"mensagem:" "Dados incompletos!!"}), 400
+
+    novo_Funcionario = models.Funcionario(
+        nome = nomeFunc,
+        cpf = cpfFunc,
+        telefone = telefoneFunc,
+        email = emailFunc,
+        especialidade = especialidadeFunc,
+        disponibilidade = disponibilidadeFunc
+    )
+
+    try:
+        db.session.add(novo_Funcionario)
+        db.session.commit()
+        return jsonify({"mensagem": "Funcionario cadastrado com sucesso!!!."}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"mensagem": f"Erro ao cadastrar funcionario: {str(e)}"}), 500
+
+
+#================================================================================================================================================
+#================================================================================================================================================
+
+@app.route('/diaristas')
+def listar_diariatas():
+    diaristas = models.Funcionario.query.order_by(models.Funcionario.idFuncionario).all()
+
+    diarista = []
+    for d in diaristas:
+        diarista.append({
+            "idFuncionario": d.idFuncionario,
+            "nome": d.nome,
+            "email": d.email,
+            "disponibilidade": d.disponibilidade,
+            "especialidade": d.especialidade
+        })
+
+    return jsonify(diarista), 200
+
 @app.route('/cadastrar', methods=['POST'])
 def cadastrar_cliente():
     dados = request.get_json()
@@ -199,7 +252,8 @@ def login_cliente():
         "userInfo": {
             "id": cliente.idCliente,  # Guardamos o ID aqui para usar depois no agendamento
             "user": cliente.nome,  # dados.userInfo.user
-            "Email": cliente.email  # dados.userInfo.Email
+            "Email": cliente.email,  # dados.userInfo.Email
+            "Tipo": cliente.tipo
         }
     }), 200
 

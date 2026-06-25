@@ -12,6 +12,7 @@ class Cliente(db.Model):
     email = db.Column(db.String(100), nullable=False)
     senha = db.Column(db.String(100), nullable=False)
     endereco = db.Column(db.String(100), nullable=True)
+    tipo = db.Column(db.String(100), nullable=True)
 
     agendamentos = db.relationship('Agendamento', backref='cliente', lazy=True)
 
